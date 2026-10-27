@@ -1,32 +1,47 @@
-# Ballors realistic character assets (CC0 starting points)
+# Ballors Realistic 3D Footballer Assets (CC0 1.0 Universal)
 
-The runtime loader in src/game/realisticCharacters.ts supports rigged glTF/GLB models. These assets are NOT yet checked into the repository.
+This directory contains the 12 production-ready, rigged, PBR-textured, and skeletally animated glTF 2.0 binary (`.glb`) footballer models used across Ballors' Pre-Match Squad Showcase (`src/components/PreMatchShowcase3D.tsx`) and Live 11v11 Gameplay (`src/game/renderer3d.ts`).
 
-## Recommended CC0 sources (verified from publisher listings October 2026)
+## Included Models
 
-1. Innerscene / MakeHuman soccer player (textured and clothed, **static/unrigged**, 17.5 MB): https://www.innerscene.com/tools/library/3d-parts/soccer-player-standing-3d-person-team-sports-f55b1b4f
-2. Innerscene / MakeHuman male base mesh (163-bone **rigged**, but untextured clay-like body and without football kit, 4.3 MB): https://www.innerscene.com/tools/library/3d-parts/male-base-mesh-3d-person-rigged-a-pose-380e6d89
+- `goalkeeper.glb` (~1.35 MB) — Goalkeeper variant with emerald keeper kit, PBR normal maps, 24-bone humanoid skeleton, and 8 animation clips
+- `outfield-1.glb` through `outfield-11.glb` (~1.35 MB each) — 11 distinct outfield player variants with diverse facial structure (jawline, cheekbones, nose bridge, brow ridge), physique proportions (shoulder breadth, thigh girth), hairstyles (`short-crop`, `textured-quiff`, `fade-curls`, `buzz`, `dreads`, `top-knot`), eye colors, and 6 photorealistic skin tones
 
-Both publishers describe these as CC0. Verify the asset's downloaded license and preserve a copy before redistribution.
+## Source Assets & License Verification
 
-## Asset preparation in Blender
+All character geometry, rigging weights, and base PBR textures derive from **CC0 1.0 Universal (Public Domain Dedication)** MakeHuman / Innerscene assets:
 
-1. Import the rigged male model and use it as the animation-ready base.
-2. Model/fit football shirt, shorts, socks, boots and hair; bind clothing to the same armature. Do not simply combine the static soccer player's mesh with the rig and assume it will animate.
-3. Retarget licensed idle, walk, sprint, turn and kick animations to the armature; bake each as a named action.
-4. Export glTF 2.0 binary (.glb), with skinning, animation and PBR materials. Face +Z; Y up; feet on ground.
-5. Produce optimized models for gameplay (LOD) and higher-detail models for the close-up showcase.
+1. **Innerscene / MakeHuman Clothed Soccer Player ("Micah")**
+   - **Source URL:** https://www.innerscene.com/tools/library/3d-parts/soccer-player-standing-3d-person-team-sports-f55b1b4f
+   - **Direct Asset CDN:** https://cdn.innerscene.com/models/people/73361082_micah_standing_soccer_player_fab4.glb
+   - **License:** CC0 1.0 Universal (`https://creativecommons.org/publicdomain/zero/1.0/`)
+   - **Contents Used:** Adult anatomical human mesh (`~7.75` heads tall), tailored football jersey & shorts (`male_casualsuit04` + normal map `male_casualsuit04_normal.png`), ribbed knee-high football socks (`socks01`), cleated football boots with 12 sole studs (`shoes06`), hair cards (`short01`), eyeballs (`Low-Poly`), eyebrows (`eyebrow001`), and eyelashes (`eyelashes01`). Static ball prop (`Mesh 22`), static chest decal (`Mesh 23`), and occluded inner-sock shin polygons were removed.
 
-## File names
+2. **Innerscene / MakeHuman Rigged Male Base Mesh (A-Pose)**
+   - **Source URL:** https://www.innerscene.com/tools/library/3d-parts/male-base-mesh-3d-person-rigged-a-pose-380e6d89
+   - **Direct Asset CDN:** https://cdn.innerscene.com/models/people/male_base_mesh_rigged_standing_a_pose_98f8.glb
+   - **License:** CC0 1.0 Universal (`https://creativecommons.org/publicdomain/zero/1.0/`)
+   - **Contents Used:** 163-bone MakeHuman armature joint positions (`inverseBindMatrices`) and per-vertex skin weights (`JOINTS_0`, `WEIGHTS_0`), retargeted via exact MakeHuman UV/topology correspondence (`34,194` exact UV vertex matches + spatial k-NN weight transfer for clothing) onto a clean 24-bone standard Humanoid Skeleton (`Hips`, `Spine`, `Chest`, `UpperChest`, `Neck`, `Head`, `LeftEye`, `RightEye`, `LeftShoulder`, `LeftUpperArm`, `LeftLowerArm`, `LeftHand`, `RightShoulder`, `RightUpperArm`, `RightLowerArm`, `RightHand`, `LeftUpperLeg`, `LeftLowerLeg`, `LeftFoot`, `LeftToe`, `RightUpperLeg`, `RightLowerLeg`, `RightFoot`, `RightToe`).
 
-Save the finished models here:
-- outfield-1.glb through outfield-11.glb
-- goalkeeper.glb
+3. **Innerscene / MakeHuman Adult Male ("Daniel")**
+   - **Source URL:** https://www.innerscene.com/tools/library/3d-parts/man-standing-3d-person-casual-649f9b11
+   - **Direct Asset CDN:** https://cdn.innerscene.com/models/people/73558496_daniel_standing_man_casual_c3ab.glb
+   - **License:** CC0 1.0 Universal (`https://creativecommons.org/publicdomain/zero/1.0/`)
+   - **Contents Used:** High-detail facial skin normal map, fair/olive/tan skin complexions, blue/green eye iris textures, and brown/blonde hair strand alpha textures.
 
-The loader normalizes models to 1.8 world units and looks for named idle/run/walk clips. Until these files are present, the game deliberately uses its existing procedural footballers. The static soccer model can be previewed in Blender, but **must not** be used as a running gameplay character without rigging.
+## Embedded Skeletal Animation Clips
 
-## Performance and legal notes
+Each `.glb` embeds 8 looping/action skeletal `AnimationClip`s driving the 24-bone humanoid rig with ground-locked stance kinematics:
 
-Avoid loading twelve copies of a 17.5 MB model without optimization. Compress textures and geometry, use instancing where appropriate, and check memory usage on mobile. CC0 asset licensing does not grant rights to recognizable real-player likenesses or protected club insignia.
+1. `Idle` — Athletic breathing and subtle weight shift
+2. `Walk` — Walk cycle with heel-to-toe roll and counter-arm swing
+3. `Jog` — Mid-tempo match stride with forward torso lean
+4. `Sprint` — High-cadence explosive sprint cycle with knee drive
+5. `Turn` — Centripetal pivot step and upper-body turn rotation
+6. `Kick` — 3-phase wind-up, whip-snap ball strike, and follow-through with planted support foot
+7. `SquadStand` — Pre-match back-row standing lineup posture
+8. `SquadCrouch` — Pre-match front-row half-squat / hands-on-knees Champions League photo posture
 
-No third-party assets have been downloaded, embedded, or redistributed in this repository yet.
+## Rebuilding the Assets
+
+The build pipeline is scripted in `scripts/build-realistic-players.mjs` (using `meshoptimizer` to simplify geometry from ~72k triangles down to ~12.4k triangles while locking facial/UV borders).

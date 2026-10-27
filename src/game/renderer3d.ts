@@ -1,4 +1,9 @@
-import { characterAssetPath, loadRealisticCharacter, type RealisticCharacter } from './realisticCharacters'
+import {
+  characterAssetPath,
+  loadRealisticCharacter,
+  type RealisticCharacter,
+  type RealisticCharacterOptions,
+} from './realisticCharacters'
 import * as THREE from 'three'
 import type {
   DribbleType,
@@ -13,8 +18,10 @@ import {
   animateAthleticPlayerRig,
   buildAthleticPlayerRig,
   computeAppearanceKey,
+  createLightweightPlayerRig,
   createMatchBallMesh,
   createStudioEnvironment,
+  type BuildPlayerOptions,
   type PlayerAppearance,
   type PlayerRig3D,
 } from './playerModel3d'
@@ -80,11 +87,28 @@ export class Match3DRenderer {
   private realistic = new Map<number, RealisticCharacter>()
   private pendingModels = new Map<number, string>()
   private disposed = false
-  private attachRealistic(id: number, rig: PlayerRig3D, key: string, keeper: boolean) {
+  private attachRealistic(
+    id: number,
+    rig: PlayerRig3D,
+    key: string,
+    opts: RealisticCharacterOptions,
+    fallbackOpts: BuildPlayerOptions
+  ) {
     this.pendingModels.set(id, key)
-    void loadRealisticCharacter(characterAssetPath(id, keeper)).then(model => {
-      if (!model) return
-      if (this.disposed || this.pendingModels.get(id) !== key || this.rigs.get(id) !== rig) { model.dispose(); return }
+    void loadRealisticCharacter(characterAssetPath(id, Boolean(opts.keeper)), 1.92, opts).then(model => {
+      if (this.disposed || this.pendingModels.get(id) !== key || this.rigs.get(id) !== rig) {
+        model?.dispose()
+        return
+      }
+      if (!model) {
+        const fb = buildAthleticPlayerRig(fallbackOpts, this.makeLabel)
+        fb.group.position.copy(rig.group.position)
+        fb.group.rotation.copy(rig.group.rotation)
+        this.scene.remove(rig.group)
+        this.scene.add(fb.group)
+        this.rigs.set(id, fb)
+        return
+      }
       this.realistic.get(id)?.dispose()
       this.realistic.set(id, model)
       rig.group.add(model.root)
@@ -127,15 +151,25 @@ export class Match3DRenderer {
       canvas,
       antialias: true,
       powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,
     })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 800 ? 1.35 : 1.75))
-    this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    const gl = this.renderer.getContext()
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+    const glRendererStr = `${gl.getParameter(gl.RENDERER)} ${dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : ''}`
+    const isSoftwareGl = /SwiftShader|llvmpipe|softpipe|Subzero/i.test(glRendererStr)
+
+    this.renderer.setPixelRatio(
+      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, window.innerWidth < 800 ? 1.35 : 1.75)
+    )
+    this.renderer.shadowMap.enabled = !isSoftwareGl
+    this.renderer.shadowMap.type = THREE.PCFShadowMap
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = this.weather === 'rain' ? 1.08 : 1.02
+    this.renderer.toneMappingExposure = this.weather === 'rain' ? 1.08 : 1.04
 
-    this.scene.environment = createStudioEnvironment(this.renderer)
+    if (!isSoftwareGl) {
+      this.scene.environment = createStudioEnvironment(this.renderer)
+    }
 
     const sky = this.weather === 'clear' ? '#8fa9b0' : this.weather === 'cloudy' ? '#718086' : '#4e6269'
     this.scene.background = new THREE.Color(sky)
@@ -884,23 +918,34 @@ export class Match3DRenderer {
         if (rig) this.scene.remove(rig.group)
         this.realistic.get(p.id)?.dispose()
         this.realistic.delete(p.id)
-        rig = buildAthleticPlayerRig(
-          {
-            id: p.id,
-            team: p.team,
-            name: p.name,
-            number: p.number,
-            keeper: p.keeper,
-            radius: p.radius,
-            appearance: p.appearance,
-            includeLabel: true,
-            includeRing: true,
-          },
-          this.makeLabel
-        )
+        const rigOpts: BuildPlayerOptions = {
+          id: p.id,
+          team: p.team,
+          name: p.name,
+          number: p.number,
+          keeper: p.keeper,
+          radius: p.radius,
+          appearance: p.appearance,
+          includeLabel: true,
+          includeRing: true,
+        }
+        rig = createLightweightPlayerRig(rigOpts, this.makeLabel)
         this.scene.add(rig.group)
         this.rigs.set(p.id, rig)
-        this.attachRealistic(p.id, rig, desiredKey, p.keeper)
+        this.attachRealistic(
+          p.id,
+          rig,
+          desiredKey,
+          {
+            index: p.id,
+            team: p.team,
+            number: p.number,
+            name: p.name,
+            keeper: p.keeper,
+            appearance: p.appearance,
+          },
+          rigOpts
+        )
       }
 
       const px = sx(p.x)
@@ -916,7 +961,15 @@ export class Match3DRenderer {
         dt
       )
 
-      this.realistic.get(p.id)?.update(dt, Math.hypot(p.vx, p.vy))
+      const rModel = this.realistic.get(p.id)
+      if (rModel) {
+        rModel.update(dt, Math.hypot(p.vx, p.vy), {
+          sprinting: p.sprinting,
+          action: p.action,
+          actionTime: p.actionTime,
+          turnRate: rig.kinematics?.smoothedTurnRate ?? 0,
+        })
+      }
       rig.ring.visible = p.id === controlled
       if (rig.label) rig.label.visible = p.id === controlled || p.keeper
     }
