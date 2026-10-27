@@ -1,3 +1,9 @@
+import {
+  characterAssetPath,
+  loadRealisticCharacter,
+  type RealisticCharacter,
+  type RealisticCharacterOptions,
+} from '../game/realisticCharacters'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { PlayerConfig } from '../game/engine'
@@ -5,9 +11,11 @@ import {
   applyShowcaseIKPose,
   buildAthleticPlayerRig,
   computeAppearanceKey,
+  createLightweightPlayerRig,
   createMatchBallMesh,
   createStudioEnvironment,
   defaultAppearanceForIndex,
+  type BuildPlayerOptions,
   type PlayerRig3D,
 } from '../game/playerModel3d'
 
@@ -24,7 +32,7 @@ interface PreMatchShowcase3DProps {
 
 // Authentic FC Barcelona / Champions League 2-Row Pre-Match Squad Photo Formation + Bench Substitutes
 // Every slot has y = 0 so ALL boots rest cleanly on top of the pitch grass with zero clipping!
-// Back Row: 6 standing players (5 outfield + Goalkeeper #0 on the right end, just like Barcelona's lineup photo)
+// Back Row: 6 standing players (5 outfield + Goalkeeper #0 on the right end)
 // Front Row: 5 players in the classic half-squat / hands-on-knees team photo pose
 // Bench Slots (11+): Standing on the outer flanks so all 13+ squad & user-created players are visible in 3D!
 const SQUAD_POSE_SLOTS: { x: number; y: number; z: number; row: 'front' | 'back' }[] = [
@@ -51,6 +59,18 @@ const SQUAD_POSE_SLOTS: { x: number; y: number; z: number; row: 'front' | 'back'
   { x: 2.62, y: 0, z: -0.15, row: 'back' },
 ]
 
+function getSlotForIndex(i: number): { x: number; y: number; z: number; row: 'front' | 'back' } {
+  const extraIdx = Math.max(0, i - SQUAD_POSE_SLOTS.length)
+  return (
+    SQUAD_POSE_SLOTS[i] ?? {
+      x: (i % 2 === 0 ? -1 : 1) * (2.65 + Math.floor(extraIdx / 2) * 0.45),
+      y: 0,
+      z: -0.25,
+      row: 'back' as const,
+    }
+  )
+}
+
 export function PreMatchShowcase3D({
   players,
   numbers,
@@ -75,32 +95,44 @@ export function PreMatchShowcase3D({
     container.innerHTML = ''
     container.appendChild(canvas)
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,
+    })
+    const gl = renderer.getContext()
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+    const glRendererStr = `${gl.getParameter(gl.RENDERER)} ${dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : ''}`
+    const isSoftwareGl = /SwiftShader|llvmpipe|softpipe|Subzero/i.test(glRendererStr)
+
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.08
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMappingExposure = 1.1
+    renderer.shadowMap.enabled = !isSoftwareGl
+    renderer.shadowMap.type = THREE.PCFShadowMap
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#0d221c')
     scene.fog = new THREE.Fog('#0d221c', 7.5, 19)
 
-    scene.environment = createStudioEnvironment(renderer)
+    if (!isSoftwareGl) {
+      scene.environment = createStudioEnvironment(renderer)
+    }
 
     const camera = new THREE.PerspectiveCamera(27, 16 / 10, 0.1, 60)
 
-    // Stadium Floodlight, Real-Time Soft Shadow Key Light & Rim Lighting
-    const hemi = new THREE.HemisphereLight('#f2f8ff', '#1b432c', 1.25)
+    // Stadium Floodlight, Real-Time Soft Shadow Key Light, Rim & Facial Close-Up Fill Lighting
+    const hemi = new THREE.HemisphereLight('#f2f8ff', '#1b432c', isSoftwareGl ? 1.55 : 1.28)
     scene.add(hemi)
 
     const keyLight = new THREE.DirectionalLight('#fff6e8', 2.45)
     keyLight.position.set(2.8, 5.8, 4.6)
-    keyLight.castShadow = true
+    keyLight.castShadow = !isSoftwareGl
     keyLight.shadow.mapSize.set(2048, 2048)
-    keyLight.shadow.camera.left = -3.2
-    keyLight.shadow.camera.right = 3.2
+    keyLight.shadow.camera.left = -3.4
+    keyLight.shadow.camera.right = 3.4
     keyLight.shadow.camera.top = 2.8
     keyLight.shadow.camera.bottom = -2.2
     keyLight.shadow.camera.near = 0.8
@@ -110,11 +142,15 @@ export function PreMatchShowcase3D({
     keyLight.shadow.radius = 2.6
     scene.add(keyLight)
 
-    const fillLight = new THREE.DirectionalLight('#d8ecff', 0.9)
+    const fillLight = new THREE.DirectionalLight('#d8ecff', 0.98)
     fillLight.position.set(-4.2, 3.2, 4.0)
     scene.add(fillLight)
 
-    const rimLight = new THREE.DirectionalLight('#dfff57', 0.95)
+    const faceFillLight = new THREE.DirectionalLight('#fffaf2', 0.72)
+    faceFillLight.position.set(0.4, 1.85, 2.8)
+    scene.add(faceFillLight)
+
+    const rimLight = new THREE.DirectionalLight('#d8ecff', 0.85)
     rimLight.position.set(0, 4.5, -4.5)
     scene.add(rimLight)
 
@@ -156,6 +192,43 @@ export function PreMatchShowcase3D({
     scene.add(ballCenter)
 
     const rigs = new Map<number, PlayerRig3D>()
+    const realistic = new Map<number, RealisticCharacter>()
+    const pending = new Map<number, string>()
+    let alive = true
+
+    const attachRealistic = (
+      i: number,
+      rig: PlayerRig3D,
+      key: string,
+      charOpts: RealisticCharacterOptions,
+      fallbackOpts: BuildPlayerOptions
+    ) => {
+      const isK = Boolean(charOpts.keeper)
+      const assetIdx = charOpts.number ? charOpts.number - 1 : i
+      const path = characterAssetPath(assetIdx, isK)
+      pending.set(i, key)
+      void loadRealisticCharacter(path, 1.92, charOpts).then(model => {
+        if (!alive || pending.get(i) !== key || rigs.get(i) !== rig) {
+          model?.dispose()
+          return
+        }
+        if (!model) {
+          // Asset unavailable -> build procedural fallback rig
+          const fb = buildAthleticPlayerRig(fallbackOpts)
+          fb.group.position.copy(rig.group.position)
+          fb.group.rotation.copy(rig.group.rotation)
+          scene.remove(rig.group)
+          scene.add(fb.group)
+          rigs.set(i, fb)
+          return
+        }
+        realistic.get(i)?.dispose()
+        realistic.set(i, model)
+        rig.group.add(model.root)
+        rig.body.visible = false
+      })
+    }
+
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
 
@@ -168,7 +241,7 @@ export function PreMatchShowcase3D({
       raycaster.setFromCamera(pointer, camera)
 
       for (const [idx, rig] of rigs.entries()) {
-        const hits = raycaster.intersectObject(rig.body, true)
+        const hits = raycaster.intersectObject(realistic.get(idx)?.root ?? rig.body, true)
         if (hits.length > 0) {
           stateRef.current.onSelectPlayer(idx)
           break
@@ -178,24 +251,48 @@ export function PreMatchShowcase3D({
     canvas.addEventListener('pointerdown', handlePointerDown)
 
     let rafId = 0
+    let resizeRafId = 0
+    let timeoutId = 0
     let clock = 0
     let last = performance.now()
+    let lastW = 0
+    let lastH = 0
 
     const resize = () => {
-      const w = Math.max(1, container.clientWidth)
-      const h = Math.max(1, container.clientHeight)
+      if (!alive) return
+      const w = Math.max(1, Math.round(container.clientWidth))
+      const h = Math.max(1, Math.round(container.clientHeight))
+      if (w === lastW && h === lastH) return
+      lastW = w
+      lastH = h
       camera.aspect = w / h
       camera.updateProjectionMatrix()
       renderer.setSize(w, h, false)
     }
-    const ro = new ResizeObserver(resize)
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRafId)
+      resizeRafId = requestAnimationFrame(resize)
+    })
     ro.observe(container)
     resize()
 
     const camPos = new THREE.Vector3(0, 1.22, 4.95)
     const camTarget = new THREE.Vector3(0, 0.94, 0)
+    const headWorldVec = new THREE.Vector3()
+
+    const scheduleNext = (fn: FrameRequestCallback) => {
+      if (!alive) return
+      if (isSoftwareGl) {
+        timeoutId = window.setTimeout(() => {
+          if (alive) rafId = requestAnimationFrame(fn)
+        }, 45)
+      } else {
+        rafId = requestAnimationFrame(fn)
+      }
+    }
 
     const tick = (now: number) => {
+      if (!alive) return
       const dt = Math.min((now - last) / 1000, 0.05)
       last = now
       clock += dt
@@ -206,6 +303,9 @@ export function PreMatchShowcase3D({
       for (const [existingIdx, existingRig] of rigs.entries()) {
         if (existingIdx >= curPlayers.length) {
           scene.remove(existingRig.group)
+          realistic.get(existingIdx)?.dispose()
+          realistic.delete(existingIdx)
+          pending.delete(existingIdx)
           rigs.delete(existingIdx)
         }
       }
@@ -213,12 +313,16 @@ export function PreMatchShowcase3D({
       for (let i = 0; i < curPlayers.length; i++) {
         const p = curPlayers[i]
         const app = p.appearance ?? defaultAppearanceForIndex(i)
+        const slot = getSlotForIndex(i)
+        const num = curNums[i] ?? i + 1
+        const name = p.name || `Player ${i + 1}`
+        const isKeeper = curPlayers.length > 1 ? i === 0 : (num === 1 || p.name?.toLowerCase().includes('keeper'))
         const opts = {
           id: i,
           team: 0 as const,
-          name: p.name || `Player ${i + 1}`,
-          number: curNums[i] ?? i + 1,
-          keeper: i === 0,
+          name,
+          number: num,
+          keeper: isKeeper,
           radius: (15 * p.size) / 100,
           appearance: app,
           includeLabel: false,
@@ -229,33 +333,52 @@ export function PreMatchShowcase3D({
         const key = computeAppearanceKey(opts)
         if (!rig || rig.appearanceKey !== key) {
           if (rig) scene.remove(rig.group)
-          rig = buildAthleticPlayerRig(opts)
+          realistic.get(i)?.dispose()
+          realistic.delete(i)
+          rig = createLightweightPlayerRig(opts)
           scene.add(rig.group)
           rigs.set(i, rig)
+          attachRealistic(
+            i,
+            rig,
+            key,
+            {
+              index: i,
+              team: 0,
+              number: num,
+              name,
+              keeper: isKeeper,
+              appearance: app,
+              showcaseRow: slot.row,
+              cameraMode: mode,
+            },
+            opts
+          )
         }
 
+        const rModel = realistic.get(i)
         if (isSolo) {
           rig.group.visible = i === selIdx
           if (i === selIdx) {
             rig.group.position.set(0, 0, 0)
-            rig.group.rotation.y = Math.sin(clock * 0.55) * 0.28
+            rig.group.rotation.y = Math.sin(clock * 0.55) * (mode === 'face' ? 0.18 : 0.28)
             rig.ring.visible = false
-            applyShowcaseIKPose(rig, i, 'back', clock, true, dt)
+            if (rModel) {
+              rModel.update(dt, 0, { showcaseRow: 'back', cameraMode: mode })
+            } else {
+              applyShowcaseIKPose(rig, i, 'back', clock, true, dt)
+            }
           }
         } else {
           rig.group.visible = true
-          const extraIdx = Math.max(0, i - SQUAD_POSE_SLOTS.length)
-          const fallbackSlot = {
-            x: (i % 2 === 0 ? -1 : 1) * (2.65 + Math.floor(extraIdx / 2) * 0.45),
-            y: 0,
-            z: -0.25,
-            row: 'back' as const,
-          }
-          const slot = SQUAD_POSE_SLOTS[i] ?? fallbackSlot
           rig.group.position.set(slot.x, slot.y, slot.z)
           rig.group.rotation.y = -slot.x * 0.08
           rig.ring.visible = i === selIdx
-          applyShowcaseIKPose(rig, i, slot.row, clock, false, dt)
+          if (rModel) {
+            rModel.update(dt, 0, { showcaseRow: slot.row, cameraMode: 'squad' })
+          } else {
+            applyShowcaseIKPose(rig, i, slot.row, clock, false, dt)
+          }
         }
       }
 
@@ -267,17 +390,25 @@ export function PreMatchShowcase3D({
       let desiredLook: THREE.Vector3
 
       if (mode === 'face') {
-        const headY = 1.88 * selectedScale
-        desiredPos = new THREE.Vector3(0, headY + 0.02, 1.08)
-        desiredLook = new THREE.Vector3(0, headY - 0.01, 0)
+        const selRealistic = realistic.get(selIdx)
+        if (selRealistic) {
+          selRealistic.getHeadWorldPosition(headWorldVec)
+          const headY = headWorldVec.y
+          desiredPos = new THREE.Vector3(0, headY + 0.01, 0.76)
+          desiredLook = new THREE.Vector3(0, headY - 0.005, 0)
+        } else {
+          const headY = 1.88 * selectedScale
+          desiredPos = new THREE.Vector3(0, headY + 0.02, 1.08)
+          desiredLook = new THREE.Vector3(0, headY - 0.01, 0)
+        }
       } else if (mode === 'body') {
-        // Framed so the ENTIRE player from boots on turf (y = 0) to hair crown (y = 2.08m) is 100% visible with zero cropping!
-        desiredPos = new THREE.Vector3(0, 1.05 * selectedScale, 4.45 * Math.max(0.95, selectedScale))
-        desiredLook = new THREE.Vector3(0, 1.02 * selectedScale, 0)
+        // Framed so the ENTIRE player from boots on turf (y = 0) to hair crown (y = 1.95m) is 100% visible with zero cropping!
+        desiredPos = new THREE.Vector3(0, 1.0 * selectedScale, 4.25 * Math.max(0.95, selectedScale))
+        desiredLook = new THREE.Vector3(0, 0.96 * selectedScale, 0)
       } else {
-        // Framed so all 11 starters + Bench substitutes on the flanks are visible on the turf
-        desiredPos = new THREE.Vector3(0, 1.26, 5.75)
-        desiredLook = new THREE.Vector3(0, 0.96, -0.05)
+        // Framed so all 11 starters + Bench substitutes on the flanks are fully visible on the turf
+        desiredPos = new THREE.Vector3(0, 1.28, 6.45)
+        desiredLook = new THREE.Vector3(0, 0.90, -0.06)
       }
 
       camPos.lerp(desiredPos, Math.min(1, dt * 6.5))
@@ -286,12 +417,18 @@ export function PreMatchShowcase3D({
       camera.lookAt(camTarget)
 
       renderer.render(scene, camera)
-      rafId = requestAnimationFrame(tick)
+      scheduleNext(tick)
     }
 
     rafId = requestAnimationFrame(tick)
 
     return () => {
+      alive = false
+      clearTimeout(timeoutId)
+      cancelAnimationFrame(resizeRafId)
+      pending.clear()
+      for (const model of realistic.values()) model.dispose()
+      realistic.clear()
       cancelAnimationFrame(rafId)
       canvas.removeEventListener('pointerdown', handlePointerDown)
       ro.disconnect()

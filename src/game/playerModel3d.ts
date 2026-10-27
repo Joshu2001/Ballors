@@ -2515,6 +2515,106 @@ function getOrLoadImage(dataUrl?: string, onReady?: (img: HTMLImageElement) => v
   return img
 }
 
+export function createLightweightPlayerRig(
+  p: BuildPlayerOptions,
+  labelFactory?: (name: string, number: number, keeper: boolean) => THREE.Sprite
+): PlayerRig3D {
+  const group = new THREE.Group()
+  const body = new THREE.Group()
+  const scale = p.radius / 15
+  group.add(body)
+  group.scale.setScalar(scale)
+
+  if (!sharedShadowTex) sharedShadowTex = makeContactShadowTexture()
+  const shadowDisc = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.05, 1.05),
+    new THREE.MeshBasicMaterial({
+      map: sharedShadowTex,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    })
+  )
+  shadowDisc.rotation.x = -Math.PI / 2
+  shadowDisc.position.y = 0.015
+  group.add(shadowDisc)
+
+  const pelvis = new THREE.Group()
+  pelvis.position.y = 0.89
+  body.add(pelvis)
+
+  const torso = new THREE.Group()
+  torso.position.y = 0.92
+  body.add(torso)
+
+  const neck = new THREE.Group()
+  neck.position.set(0, 0.7, 0)
+  torso.add(neck)
+
+  const head = new THREE.Group()
+  head.position.set(0, 0.215, 0.012)
+  neck.add(head)
+
+  const makeEmptyLimb = (parent: THREE.Object3D): LimbRig => {
+    const upper = new THREE.Group()
+    const lower = new THREE.Group()
+    const footOrHand = new THREE.Group()
+    upper.add(lower)
+    lower.add(footOrHand)
+    parent.add(upper)
+    return { upper, lower, footOrHand }
+  }
+
+  const leftLeg = makeEmptyLimb(pelvis)
+  const rightLeg = makeEmptyLimb(pelvis)
+  const leftArm = makeEmptyLimb(torso)
+  const rightArm = makeEmptyLimb(torso)
+
+  const ring = addMesh(
+    new THREE.RingGeometry(0.48, 0.58, 44),
+    new THREE.MeshBasicMaterial({
+      color: '#dfff57',
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95,
+    }),
+    group,
+    0,
+    0.024,
+    0,
+    false
+  )
+  ring.rotation.x = -Math.PI / 2
+  ring.visible = p.includeRing ?? false
+
+  let label: THREE.Sprite | undefined
+  if (p.includeLabel && labelFactory) {
+    label = labelFactory(p.name, p.number, p.keeper)
+    label.position.set(0, 2.42, 0)
+    group.add(label)
+  }
+
+  return {
+    group,
+    body,
+    pelvis,
+    torso,
+    neck,
+    head,
+    leftLeg,
+    rightLeg,
+    leftArm,
+    rightArm,
+    ring,
+    shadowDisc,
+    label,
+    phase: p.id * 0.73,
+    scale,
+    appearanceKey: computeAppearanceKey(p),
+  }
+}
+
 export function buildAthleticPlayerRig(
   p: BuildPlayerOptions,
   labelFactory?: (name: string, number: number, keeper: boolean) => THREE.Sprite
