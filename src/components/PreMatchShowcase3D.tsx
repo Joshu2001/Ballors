@@ -1,3 +1,4 @@
+import { characterAssetPath, loadRealisticCharacter, type RealisticCharacter } from '../game/realisticCharacters'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { PlayerConfig } from '../game/engine'
@@ -156,6 +157,21 @@ export function PreMatchShowcase3D({
     scene.add(ballCenter)
 
     const rigs = new Map<number, PlayerRig3D>()
+    const realistic = new Map<number, RealisticCharacter>()
+    const pending = new Map<number, string>()
+    let alive = true
+    const attachRealistic = (i: number, rig: PlayerRig3D, key: string) => {
+      const path = characterAssetPath(i, i === 0)
+      pending.set(i, key)
+      void loadRealisticCharacter(path).then(model => {
+        if (!model) return
+        if (!alive || pending.get(i) !== key || rigs.get(i) !== rig) { model.dispose(); return }
+        realistic.get(i)?.dispose()
+        realistic.set(i, model)
+        rig.group.add(model.root)
+        rig.body.visible = false
+      })
+    }
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
 
@@ -168,7 +184,7 @@ export function PreMatchShowcase3D({
       raycaster.setFromCamera(pointer, camera)
 
       for (const [idx, rig] of rigs.entries()) {
-        const hits = raycaster.intersectObject(rig.body, true)
+        const hits = raycaster.intersectObject(realistic.get(idx)?.root ?? rig.body, true)
         if (hits.length > 0) {
           stateRef.current.onSelectPlayer(idx)
           break
@@ -206,6 +222,9 @@ export function PreMatchShowcase3D({
       for (const [existingIdx, existingRig] of rigs.entries()) {
         if (existingIdx >= curPlayers.length) {
           scene.remove(existingRig.group)
+          realistic.get(existingIdx)?.dispose()
+          realistic.delete(existingIdx)
+          pending.delete(existingIdx)
           rigs.delete(existingIdx)
         }
       }
@@ -229,9 +248,12 @@ export function PreMatchShowcase3D({
         const key = computeAppearanceKey(opts)
         if (!rig || rig.appearanceKey !== key) {
           if (rig) scene.remove(rig.group)
+          realistic.get(i)?.dispose()
+          realistic.delete(i)
           rig = buildAthleticPlayerRig(opts)
           scene.add(rig.group)
           rigs.set(i, rig)
+          attachRealistic(i, rig, key)
         }
 
         if (isSolo) {
@@ -240,7 +262,7 @@ export function PreMatchShowcase3D({
             rig.group.position.set(0, 0, 0)
             rig.group.rotation.y = Math.sin(clock * 0.55) * 0.28
             rig.ring.visible = false
-            applyShowcaseIKPose(rig, i, 'back', clock, true, dt)
+            if (!realistic.has(i)) applyShowcaseIKPose(rig, i, 'back', clock, true, dt)
           }
         } else {
           rig.group.visible = true
@@ -255,10 +277,11 @@ export function PreMatchShowcase3D({
           rig.group.position.set(slot.x, slot.y, slot.z)
           rig.group.rotation.y = -slot.x * 0.08
           rig.ring.visible = i === selIdx
-          applyShowcaseIKPose(rig, i, slot.row, clock, false, dt)
+          if (!realistic.has(i)) applyShowcaseIKPose(rig, i, slot.row, clock, false, dt)
         }
       }
 
+      for (const model of realistic.values()) model.update(dt, 0)
       ballCenter.visible = !isSolo
       ballCenter.rotation.y = clock * 0.35
 
@@ -292,6 +315,10 @@ export function PreMatchShowcase3D({
     rafId = requestAnimationFrame(tick)
 
     return () => {
+      alive = false
+      pending.clear()
+      for (const model of realistic.values()) model.dispose()
+      realistic.clear()
       cancelAnimationFrame(rafId)
       canvas.removeEventListener('pointerdown', handlePointerDown)
       ro.disconnect()
