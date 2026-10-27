@@ -120,6 +120,9 @@ export class Match3DRenderer {
   private clock = 0
   private pitch: PitchType
   private observer: ResizeObserver
+  private resizeRafId = 0
+  private lastW = 0
+  private lastH = 0
   private cameraX = 0
   private narrow = false
   private weather: WeatherType
@@ -196,15 +199,22 @@ export class Match3DRenderer {
     this.ballShadow.position.y = 0.018
     this.scene.add(this.ballShadow)
 
-    this.observer = new ResizeObserver(() => this.resize(canvas))
+    this.observer = new ResizeObserver(() => {
+      cancelAnimationFrame(this.resizeRafId)
+      this.resizeRafId = requestAnimationFrame(() => this.resize(canvas))
+    })
     this.observer.observe(canvas.parentElement || canvas)
     this.resize(canvas)
   }
 
   private resize(canvas: HTMLCanvasElement) {
+    if (this.disposed) return
     const parent = canvas.parentElement
-    const width = Math.max(1, parent?.clientWidth || canvas.clientWidth || 1200)
-    const height = Math.max(1, parent?.clientHeight || canvas.clientHeight || 700)
+    const width = Math.max(1, Math.round(parent?.clientWidth || canvas.clientWidth || 1200))
+    const height = Math.max(1, Math.round(parent?.clientHeight || canvas.clientHeight || 700))
+    if (width === this.lastW && height === this.lastH) return
+    this.lastW = width
+    this.lastH = height
     this.narrow = width / height < 1.15
     this.camera.aspect = width / height
     this.camera.fov = this.narrow ? 43 : 32
@@ -1030,6 +1040,7 @@ export class Match3DRenderer {
   }
 
   destroy() {
+    cancelAnimationFrame(this.resizeRafId)
     this.observer.disconnect()
     const textures = new Set<THREE.Texture>()
     const materials = new Set<THREE.Material>()

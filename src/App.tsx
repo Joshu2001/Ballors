@@ -1084,7 +1084,7 @@ export default function App() {
                       <div className="mini-option-grid">
                         {(
                           [
-                            { id: 'sculpted', label: '3D Sculpted Likeness (Clean)', cam: 'face' },
+                            { id: 'sculpted', label: '3D Realistic Player (Clean)', cam: 'face' },
                             { id: 'photo-blend', label: 'Blend Isolated Head Photo', cam: 'face' },
                           ] as { id: FaceMapMode; label: string; cam: ShowcaseCameraMode }[]
                         ).map(fm => (

@@ -533,7 +533,7 @@ export function PlayerScannerModal({
                         className={appearance.faceMapMode === 'sculpted' ? 'active' : ''}
                         onClick={() => setAppearance(a => ({ ...a, faceMapMode: 'sculpted' as FaceMapMode }))}
                       >
-                        <Check size={11} /> Procedural 3D Face
+                        <Check size={11} /> 3D Realistic Player
                       </button>
                     </div>
                   </div>

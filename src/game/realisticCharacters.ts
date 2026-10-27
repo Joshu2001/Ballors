@@ -278,11 +278,17 @@ function customizeCharacterMaterials(root: THREE.Group, opts: RealisticCharacter
         mat.color.copy(tint)
       }
     } else if (mat.name === 'Head_Hair') {
-      mat.roughness = 0.74
-      mat.alphaTest = 0.22
+      mat.roughness = 0.84
+      mat.metalness = 0.02
+      mat.alphaTest = 0.16
       if (app?.hairColor) {
-        const hc = new THREE.Color(app.hairColor).lerp(new THREE.Color('#ffffff'), 0.35)
-        mat.color.copy(hc)
+        // Natural strand melanin tinting that preserves deep roots, strand shadows, and hair texture
+        const baseColor = new THREE.Color(app.hairColor)
+        const isLight = baseColor.r > 0.58 || baseColor.g > 0.48
+        const naturalTint = isLight
+          ? baseColor.clone().multiplyScalar(0.72).lerp(new THREE.Color('#7a4f1a'), 0.32)
+          : baseColor.clone().lerp(new THREE.Color('#ffffff'), 0.12)
+        mat.color.copy(naturalTint)
       }
     } else if (mat.name === 'Head_Eyes') {
       mat.roughness = 0.12

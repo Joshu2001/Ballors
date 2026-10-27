@@ -203,7 +203,9 @@ export function PreMatchShowcase3D({
       charOpts: RealisticCharacterOptions,
       fallbackOpts: BuildPlayerOptions
     ) => {
-      const path = characterAssetPath(i, i === 0)
+      const isK = Boolean(charOpts.keeper)
+      const assetIdx = charOpts.number ? charOpts.number - 1 : i
+      const path = characterAssetPath(assetIdx, isK)
       pending.set(i, key)
       void loadRealisticCharacter(path, 1.92, charOpts).then(model => {
         if (!alive || pending.get(i) !== key || rigs.get(i) !== rig) {
@@ -224,7 +226,6 @@ export function PreMatchShowcase3D({
         realistic.set(i, model)
         rig.group.add(model.root)
         rig.body.visible = false
-        ;(window as unknown as { __showcaseRealisticCount?: number }).__showcaseRealisticCount = realistic.size
       })
     }
 
@@ -250,18 +251,28 @@ export function PreMatchShowcase3D({
     canvas.addEventListener('pointerdown', handlePointerDown)
 
     let rafId = 0
+    let resizeRafId = 0
     let timeoutId = 0
     let clock = 0
     let last = performance.now()
+    let lastW = 0
+    let lastH = 0
 
     const resize = () => {
-      const w = Math.max(1, container.clientWidth)
-      const h = Math.max(1, container.clientHeight)
+      if (!alive) return
+      const w = Math.max(1, Math.round(container.clientWidth))
+      const h = Math.max(1, Math.round(container.clientHeight))
+      if (w === lastW && h === lastH) return
+      lastW = w
+      lastH = h
       camera.aspect = w / h
       camera.updateProjectionMatrix()
       renderer.setSize(w, h, false)
     }
-    const ro = new ResizeObserver(resize)
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRafId)
+      resizeRafId = requestAnimationFrame(resize)
+    })
     ro.observe(container)
     resize()
 
@@ -305,12 +316,13 @@ export function PreMatchShowcase3D({
         const slot = getSlotForIndex(i)
         const num = curNums[i] ?? i + 1
         const name = p.name || `Player ${i + 1}`
+        const isKeeper = curPlayers.length > 1 ? i === 0 : (num === 1 || p.name?.toLowerCase().includes('keeper'))
         const opts = {
           id: i,
           team: 0 as const,
           name,
           number: num,
-          keeper: i === 0,
+          keeper: isKeeper,
           radius: (15 * p.size) / 100,
           appearance: app,
           includeLabel: false,
@@ -335,7 +347,7 @@ export function PreMatchShowcase3D({
               team: 0,
               number: num,
               name,
-              keeper: i === 0,
+              keeper: isKeeper,
               appearance: app,
               showcaseRow: slot.row,
               cameraMode: mode,
@@ -394,9 +406,9 @@ export function PreMatchShowcase3D({
         desiredPos = new THREE.Vector3(0, 1.0 * selectedScale, 4.25 * Math.max(0.95, selectedScale))
         desiredLook = new THREE.Vector3(0, 0.96 * selectedScale, 0)
       } else {
-        // Framed so all 11 starters + Bench substitutes on the flanks are visible on the turf
-        desiredPos = new THREE.Vector3(0, 1.24, 5.65)
-        desiredLook = new THREE.Vector3(0, 0.94, -0.05)
+        // Framed so all 11 starters + Bench substitutes on the flanks are fully visible on the turf
+        desiredPos = new THREE.Vector3(0, 1.28, 6.45)
+        desiredLook = new THREE.Vector3(0, 0.90, -0.06)
       }
 
       camPos.lerp(desiredPos, Math.min(1, dt * 6.5))
@@ -413,6 +425,7 @@ export function PreMatchShowcase3D({
     return () => {
       alive = false
       clearTimeout(timeoutId)
+      cancelAnimationFrame(resizeRafId)
       pending.clear()
       for (const model of realistic.values()) model.dispose()
       realistic.clear()
