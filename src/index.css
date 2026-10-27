@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { background: #f3f5ed; }
+body { margin: 0; min-width: 320px; min-height: 100dvh; }
+button, a, input { -webkit-tap-highlight-color: transparent; }
