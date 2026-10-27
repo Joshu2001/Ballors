@@ -1,0 +1,6 @@
+{
+  "name": "Matchday Football Lab",
+  "description": "Landscape-first 3D 11v11 football game built with React, TypeScript and Three.js.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
