@@ -1,3 +1,4 @@
+import { characterAssetPath, loadRealisticCharacter, type RealisticCharacter } from './realisticCharacters'
 import * as THREE from 'three'
 import type {
   DribbleType,
@@ -76,6 +77,20 @@ export class Match3DRenderer {
   private scene = new THREE.Scene()
   private camera = new THREE.PerspectiveCamera(32, 12 / 7, 0.1, 350)
   private rigs = new Map<number, PlayerRig3D>()
+  private realistic = new Map<number, RealisticCharacter>()
+  private pendingModels = new Map<number, string>()
+  private disposed = false
+  private attachRealistic(id: number, rig: PlayerRig3D, key: string, keeper: boolean) {
+    this.pendingModels.set(id, key)
+    void loadRealisticCharacter(characterAssetPath(id, keeper)).then(model => {
+      if (!model) return
+      if (this.disposed || this.pendingModels.get(id) !== key || this.rigs.get(id) !== rig) { model.dispose(); return }
+      this.realistic.get(id)?.dispose()
+      this.realistic.set(id, model)
+      rig.group.add(model.root)
+      rig.body.visible = false
+    })
+  }
   private ball: THREE.Group
   private ballShadow: THREE.Mesh
   private clock = 0
@@ -867,6 +882,8 @@ export class Match3DRenderer {
       let rig = this.rigs.get(p.id)
       if (!rig || rig.appearanceKey !== desiredKey) {
         if (rig) this.scene.remove(rig.group)
+        this.realistic.get(p.id)?.dispose()
+        this.realistic.delete(p.id)
         rig = buildAthleticPlayerRig(
           {
             id: p.id,
@@ -883,6 +900,7 @@ export class Match3DRenderer {
         )
         this.scene.add(rig.group)
         this.rigs.set(p.id, rig)
+        this.attachRealistic(p.id, rig, desiredKey, p.keeper)
       }
 
       const px = sx(p.x)
@@ -898,6 +916,7 @@ export class Match3DRenderer {
         dt
       )
 
+      this.realistic.get(p.id)?.update(dt, Math.hypot(p.vx, p.vy))
       rig.ring.visible = p.id === controlled
       if (rig.label) rig.label.visible = p.id === controlled || p.keeper
     }
@@ -980,6 +999,10 @@ export class Match3DRenderer {
     textures.forEach(t => t.dispose())
     materials.forEach(m => m.dispose())
     geometries.forEach(g => g.dispose())
+    this.disposed = true
+    this.pendingModels.clear()
+    for (const model of this.realistic.values()) model.dispose()
+    this.realistic.clear()
     this.renderer.dispose()
   }
 }
